@@ -1,0 +1,353 @@
+# # =============================================================================
+# # MIT POKER BOTS - DOCKER DEVELOPMENT ENVIRONMENT
+# # =============================================================================
+# # This Docker Compose file sets up a complete development environment for
+# # the MIT Poker Bots playground with all necessary backend services and
+# # monitoring tools for local development.
+# # =============================================================================
+
+# services:
+#   # =============================================================================
+#   # DATABASE SERVICES
+#   # =============================================================================
+
+#   # PostgreSQL Database
+#   postgres:
+#     image: postgres:15-alpine
+#     container_name: ${POSTGRES_CONTAINER_NAME:-poker_postgres}
+#     restart: unless-stopped
+#     environment:
+#       POSTGRES_DB: ${POSTGRES_DB:-pbots}
+#       POSTGRES_USER: ${POSTGRES_USER:-postgres}
+#       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+#       PGDATA: /var/lib/postgresql/data/pgdata
+#     ports:
+#       - "${POSTGRES_PORT:-5432}:5432"
+#     volumes:
+#       - postgres_data:/var/lib/postgresql/data
+#       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+#     networks:
+#       - poker_network
+#     healthcheck:
+#       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-pbots}" ]
+#       interval: 30s
+#       timeout: 10s
+#       retries: 3
+#       start_period: 30s
+
+#   # Redis Cache & Session Store
+#   redis:
+#     image: redis:7-alpine
+#     container_name: ${REDIS_CONTAINER_NAME:-poker_redis}
+#     restart: unless-stopped
+#     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis}
+#     ports:
+#       - "${REDIS_PORT:-6379}:6379"
+#     volumes:
+#       - redis_data:/data
+#     networks:
+#       - poker_network
+#     healthcheck:
+#       test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
+#       interval: 30s
+#       timeout: 10s
+#       retries: 3
+#       start_period: 10s
+
+#   # =============================================================================
+#   # MESSAGE BROKER
+#   # =============================================================================
+
+#   # RabbitMQ Message Broker
+#   rabbitmq:
+#     image: rabbitmq:3-management-alpine
+#     container_name: ${RABBITMQ_CONTAINER_NAME:-poker_rabbitmq}
+#     restart: unless-stopped
+#     environment:
+#       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+#       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin}
+#       RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+#     ports:
+#       - "${RABBITMQ_PORT:-5672}:5672"
+#       - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+#     volumes:
+#       - rabbitmq_data:/var/lib/rabbitmq
+#     networks:
+#       - poker_network
+#     healthcheck:
+#       test: [ "CMD", "rabbitmq-diagnostics", "check_port_connectivity" ]
+#       interval: 30s
+#       timeout: 10s
+#       retries: 3
+#       start_period: 30s
+
+#   # =============================================================================
+#   # APPLICATION SERVICES
+#   # =============================================================================
+
+#   # Flask Backend Server
+#   flask-app:
+#     build:
+#       context: .
+#       dockerfile: ./app/Dockerfile
+#     container_name: ${FLASK_CONTAINER_NAME:-poker_flask}
+#     restart: unless-stopped
+#     environment:
+#       # Flask Configuration
+#       FLASK_APP: ${FLASK_APP:-manage.py}
+#       FLASK_ENV: ${FLASK_ENV:-development}
+#       FLASK_DEBUG: ${FLASK_DEBUG:-1}
+
+#       # Database Configuration
+#       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-pbots}
+
+#       # Redis Configuration
+#       REDIS_URL: redis://:${REDIS_PASSWORD:-redis}@redis:6379/0
+
+#       # Celery Configuration
+#       CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin}@rabbitmq:5672/${RABBITMQ_VHOST:-/}
+#       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-redis}@redis:6379/1
+
+#       # Application Configuration
+#       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+#       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+#       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+#     ports:
+#       - "${FLASK_PORT:-5001}:5001"
+#     volumes:
+#       - ./:/app
+#       - /app/node_modules
+#     networks:
+#       - poker_network
+#     depends_on:
+#       postgres:
+#         condition: service_healthy
+#       redis:
+#         condition: service_healthy
+#       rabbitmq:
+#         condition: service_healthy
+#     # healthcheck:
+#     #   test: [ "CMD", "curl", "-f", "http://localhost:5000/health" ]
+#     #   interval: 30s
+#     #   timeout: 10s
+#     #   retries: 3
+#     #   start_period: 40s
+
+#     # Celery Worker
+#   celery-worker:
+#     build:
+#       context: .
+#       dockerfile: ./app/Dockerfile
+#     container_name: ${CELERY_CONTAINER_NAME:-poker_celery}
+#     restart: unless-stopped
+#     command: celery -A server.celery_app worker --loglevel=info --concurrency=${CELERY_CONCURRENCY:-1}
+#     environment:
+#       # Database Configuration
+#       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-pbots}
+
+#       # Redis Configuration
+#       REDIS_URL: redis://:${REDIS_PASSWORD:-redis}@redis:6379/0
+
+#       # Celery Configuration
+#       CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin}@rabbitmq:5672/${RABBITMQ_VHOST:-/}
+#       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-redis}@redis:6379/1
+
+#       # Application Configuration
+#       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+#     volumes:
+#       - ./:/app
+#     networks:
+#       - poker_network
+#     depends_on:
+#       postgres:
+#         condition: service_healthy
+#       redis:
+#         condition: service_healthy
+#       rabbitmq:
+#         condition: service_healthy
+#       flask-app:
+#         condition: service_started
+
+#   # =============================================================================
+#   # DEVELOPMENT & MONITORING TOOLS
+#   # =============================================================================
+
+#   # pgAdmin - PostgreSQL Web Interface
+#   pgadmin:
+#     image: dpage/pgadmin4:latest
+#     container_name: ${PGADMIN_CONTAINER_NAME:-poker_pgadmin}
+#     restart: unless-stopped
+#     environment:
+#       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+#       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+#       PGADMIN_LISTEN_PORT: 80
+#     ports:
+#       - "${PGADMIN_PORT:-5050}:80"
+#     volumes:
+#       - pgadmin_data:/var/lib/pgadmin
+#     networks:
+#       - poker_network
+#     depends_on:
+#       - postgres
+#     profiles:
+#       - tools
+
+#   # Redis Commander - Redis Web Interface
+#   redis-commander:
+#     image: rediscommander/redis-commander:latest
+#     container_name: ${REDIS_COMMANDER_CONTAINER_NAME:-poker_redis_commander}
+#     restart: unless-stopped
+#     environment:
+#       REDIS_HOSTS: local:redis:6379:1:${REDIS_PASSWORD:-redis}
+#       HTTP_USER: ${REDIS_COMMANDER_USER:-admin}
+#       HTTP_PASSWORD: ${REDIS_COMMANDER_PASSWORD:-admin}
+#     ports:
+#       - "${REDIS_COMMANDER_PORT:-8081}:8081"
+#     networks:
+#       - poker_network
+#     depends_on:
+#       - redis
+#     profiles:
+#       - tools
+
+#   # Flower - Celery Monitoring Tool
+#   flower:
+#     build:
+#       context: .
+#       dockerfile: ./app/Dockerfile
+#     container_name: ${FLOWER_CONTAINER_NAME:-poker_flower}
+#     restart: unless-stopped
+#     command: celery -A server.celery_app flower --port=5555
+#     environment:
+#       # Celery Configuration
+#       CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin}@rabbitmq:5672/${RABBITMQ_VHOST:-/}
+#       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-redis}@redis:6379/1
+
+#       # Flower Configuration
+#       FLOWER_BASIC_AUTH: ${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
+#     ports:
+#       - "${FLOWER_PORT:-5555}:5555"
+#     networks:
+#       - poker_network
+#     depends_on:
+#       - rabbitmq
+#       - redis
+#     profiles:
+#       - tools
+
+# # =============================================================================
+# # NETWORKS
+# # =============================================================================
+# networks:
+#   poker_network:
+#     driver: bridge
+#     name: poker_network
+
+# # =============================================================================
+# # VOLUMES
+# # =============================================================================
+# volumes:
+#   postgres_data:
+#     name: poker_postgres_data
+#   redis_data:
+#     name: poker_redis_data
+#   rabbitmq_data:
+#     name: poker_rabbitmq_data
+#   pgadmin_data:
+#     name: poker_pgadmin_data
+
+
+# =============================================================================
+# MIT POKER BOTS - DOCKER DEVELOPMENT ENVIRONMENT
+# =============================================================================
+# This Docker Compose file sets up a complete development environment for
+# the MIT Poker Bots playground with all necessary backend services and
+# monitoring tools for local development.
+# =============================================================================
+
+
+
+
+services:
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:6
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"  # Management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: dockerfiles/web/Dockerfile
+    command: python manage.py runserver
+    ports:
+      - "5001:5001"
+    environment:
+      - PRODUCTION=${PRODUCTION}
+      - WEB=${WEB}
+      - SQLALCHEMY_DATABASE_URI=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - MESSAGE_QUEUE_URL=${MESSAGE_QUEUE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_REGION=${S3_REGION}
+      - S3_BUCKET=${S3_BUCKET}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+    restart: on-failure
+
+  worker:
+    build:
+      context: .
+      dockerfile: dockerfiles/worker/Dockerfile
+    command: celery -A server.celery_app worker --loglevel=info --concurrency=1 --without-gossip
+    environment:
+      - SQLALCHEMY_DATABASE_URI=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - MESSAGE_QUEUE_URL=${MESSAGE_QUEUE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_REGION=${S3_REGION}
+      - S3_BUCKET=${S3_BUCKET}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+    restart: on-failure
+
+volumes:
+  pgdata:
